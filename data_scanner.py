@@ -2,6 +2,8 @@ from csv import DictReader
 from datetime import datetime
 import json
 import os
+import matplotlib.pyplot as plt
+import operator
 
 TIME_DIFF_SAMPLE = 10
 
@@ -24,7 +26,6 @@ def getAvgTimeDiff(data: list):
 
         time_diff_sum += time_diff
 
-    print('time_diff_sum: {}'.format(time_diff_sum))
     time_diff_avg = time_diff_sum // TIME_DIFF_SAMPLE
 
     return time_diff_avg
@@ -35,7 +36,6 @@ def processData(data: list, file_path: str):
     '''
 
     default_time_diff = getAvgTimeDiff(data)
-    print('type: {}, default_time_diff: {}'.format(type(default_time_diff), default_time_diff))
 
     data[0]['event'] = False
     for index in range(1, len(data)):
@@ -48,9 +48,6 @@ def processData(data: list, file_path: str):
         time_diff = int((current_one_time - old_one_time).seconds)
 
         if time_diff > default_time_diff:
-            print('old_one id: {}, current_one id {}'.format(old_one['id'], current_one['id']))
-            print('old_one time: {}, current_one time {}'.format(old_one['time'], current_one['time']))
-            print('type: {}, diff: {}'.format(type(time_diff), time_diff))
             data[index]['event'] = True
         else:
             data[index]['event'] = False
@@ -62,11 +59,52 @@ def processData(data: list, file_path: str):
 telemetry_data = []
 with open(path_to_telemetry, 'r') as file:
     telemetry_data = list(DictReader(file))
+    # telemetry_data.sort(key=operator.itemgetter('id'))
 
 processData(telemetry_data, path_to_telemetry)
 
 status_data = []
 with open(path_to_status, 'r') as file:
     status_data = list(DictReader(file))
+    # status_data.sort(key=operator.itemgetter('id'))
 
 processData(status_data, path_to_status)
+
+axes_x = []
+axes_y = []
+events = []
+
+for telemetry_item in telemetry_data:
+    axes_x.append(telemetry_item['time'][12:19])
+    # axes_y.append(float(telemetry_item['height']))
+    axes_y.append(float(telemetry_item['pressure']))
+    if telemetry_item['event']:
+        events.append(telemetry_item['time'][12:19])
+
+plt.plot(axes_x, axes_y)
+for event in events:
+    plt.axvspan(event, event, color='red', alpha=1.0)
+
+ticks = list(axes_x[0::10])
+plt.xticks(ticks, rotation=90)
+
+plt.show()
+
+
+'''
+for status_item in status_data:
+    axes_x.append(status_item['time'][12:19])
+    # axes_y.append(float(telemetry_item['battery']))
+    axes_y.append(float(status_item['satellites']))
+    if status_item['event']:
+        events.append(status_item['time'][12:19])
+
+plt.plot(axes_x, axes_y)
+for event in events:
+    plt.axvspan(event, event, color='red', alpha=1.0)
+
+ticks = list(axes_x)
+plt.xticks(ticks, rotation=90)
+
+plt.show()
+'''
