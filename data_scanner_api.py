@@ -1,3 +1,5 @@
+# main.py
+
 from csv import DictReader
 from datetime import datetime
 import json
@@ -5,6 +7,9 @@ import os
 import matplotlib.pyplot as plt
 import sys
 import traceback
+
+from fastapi import FastAPI
+from pydantic import BaseModel
 
 TIME_DIFF_SAMPLE = 20
 DATE_FORMAT = '%Y-%m-%d %H:%M:%S'
@@ -55,10 +60,10 @@ def processData(data: list, file_name: str, result_path: str):
     The events are marked and save to the json file into result folder.
 
     Input: Csv data in structure list of dictionries, csv file name, path to the result folder
-    Output: status of processData function
+    Output: Path to result json file
     '''
 
-    process_status = True
+    result_json_file = ''
 
     default_time_diff = getAvgTimeDiff(data)
 
@@ -82,11 +87,11 @@ def processData(data: list, file_name: str, result_path: str):
 
         processed_json_file = os.path.join(result_path, processed_file.format(file_name))
         json.dump(data, open(processed_json_file, 'w', encoding='utf8'), indent=2)
+        result_json_file = processed_json_file
     else:
-        process_status = False
         sys.stdout.write('Exception for file: {} : default_time_diff was not set.\n'.format(file_name))
 
-    return process_status
+    return result_json_file
 
 
 def showProcessedData(data: list, message_name: str, file_name: str, result_path: str):
@@ -94,7 +99,7 @@ def showProcessedData(data: list, message_name: str, file_name: str, result_path
     Function showProcessedData visualize data colum defined in message_name and save the graph as image into result folder.
 
     Input: Csv data in structure list of dictionries, data colum name, csv file name, path to the result folder
-    Output: -
+    Output: Path to png graph file
     '''
 
     axes_x = []
@@ -124,14 +129,21 @@ def showProcessedData(data: list, message_name: str, file_name: str, result_path
     plt.savefig(message_graph_file)
     plt.close()
 
+    return message_graph_file
+
 
 def processDataFolder(message_data_path: str, result_path: str):
     '''
     Function processDataFolder walk through the given folder and process expected scv files.
 
-    Input: path to scv file folder, path to the result folder
-    Output: -
+    Input: Path to scv file folder, path to the result folder
+    Output: Lits of path to result files collected in dictionary
     '''
+
+    process_folder_status = {
+        'json_files': [],
+        'graphs': []
+    }
 
     for dir_path, _, file_basenames in os.walk(message_data_path):
         for file_basename in file_basenames:
@@ -151,25 +163,39 @@ def processDataFolder(message_data_path: str, result_path: str):
                             with open(path_to_messages_data, 'r') as file:
                                 message_data = list(DictReader(file))
 
-                            status = processData(message_data, file_name, result_fullpath)
+                            json_file = processData(message_data, file_name, result_fullpath)
+                            process_folder_status['json_files'].append(json_file)
 
-                            if status:
+                            if json_file:
                                 for message_name in MESSAGES_TO_SHOW[subname]:
-                                    showProcessedData(message_data, message_name, file_name, result_fullpath)
+                                    png_file = showProcessedData(message_data, message_name, file_name, result_fullpath)
+                                    process_folder_status['graphs'].append(png_file)
                             else:
                                 raise Exception('Exception in processData: default_time_diff was not set.')
 
             except Exception as e:
+                process_folder_status = False
                 sys.stdout.write('Exception for file: {} : {}\n'.format(file_name, traceback.format_exc()))
 
+    return process_folder_status
 
-if __name__ == '__main__':
-    args_count = len(sys.argv)
-    if args_count < 3:
-        sys.exit('Invalid number of arguments {}, expect 2: messages data source directory, result directory'.format(args_count - 1))
-    elif args_count == 3:
-        pathToMessageData = sys.argv[1]
-        pathToResult = sys.argv[2]
-        processDataFolder(pathToMessageData, pathToResult)
-    else:
-        sys.exit('Invalid number of arguments {}, expect 2: messages data source directory, result directory'.format(args_count - 1))
+
+class Configuration(BaseModel):
+    pathToMessageData: str
+    pathToResult: str
+
+
+app = FastAPI()
+
+
+@app.post("/process_data/")
+async def create_item(config: Configuration):
+
+    item_dict = {}
+
+    if config.pathToMessageData and config.pathToResult:
+        folder_status = processDataFolder(config.pathToMessageData, config.pathToResult)
+        if folder_status:
+            item_dict['folder_status'] = folder_status
+
+    return item_dict
